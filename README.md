@@ -150,3 +150,47 @@ npm run build
 ```
 
 产物输出到 `dist/` 目录，可部署到任意静态托管服务（Vercel、Netlify、GitHub Pages 等）。
+
+## 开发工具：frontend-standard 命令
+
+本项目使用 `.claude/commands/frontend-standard.md` 驱动开发，在 Claude Code 中输入 `/frontend-standard` 即可触发。
+
+### 它解决什么问题
+
+AI 写代码有一个天生盲区：能写出单个文件的高质量代码，但不会主动检查跨文件的一致性。比如：
+
+- 写的 `<Link to="/categories/cat-1">` 指向了不存在的路由
+- 调用的 API 函数参数和 `api-contract.ts` 定义不一致
+- 组件缺少 Loading / Empty / Error 状态
+- `services.ts` 里请求的端点在 `handlers.ts` 里没有对应 mock
+
+这个项目早期就发生过路由缺失 bug（`/categories/cat-2` 空白页），发现后 command 立即迭代，新增了"路由契约清算"阶段来防止同类问题。
+
+### 7 个阶段、14 个步骤
+
+| 阶段 | 步骤 | 做什么 |
+|------|------|--------|
+| 数据与接口清算 | 1-3 | types.ts → api-contract.ts → services.ts，三层契约 |
+| Mock 环境搭建 | 4-5 | MSW handlers 覆盖每个 API 的成功+失败分支 |
+| 组件原子化开发 | 6-8 | 组件树 → 逐一实现 → 补齐四种异步状态 |
+| 路由契约清算 | 9-10 | 扫描所有 `<Link>` 和 `navigate()` → 对照路由表 → 修复未匹配项 |
+| 组件交叉校验 | 11 | 检查 import / API / 类型是否一致 |
+| 双模冒烟验证 | 12-13 | 正向测试已注册路由 + 逆向扫描所有链接是否可达 |
+| 后端交付文档 | 14 | 生成 mock-api-doc.md 供后端开发 |
+
+### 核心铁律
+
+1. 每一步必须机械执行，不能跳过或合并
+2. 每完成一步必须输出 `✅步骤X 完成`
+3. 产出与契约不一致时必须报告"契约冲突"并停止等待裁决
+4. 只准执行，不准自作聪明
+
+### 使用方式
+
+在 Claude Code 中：
+
+```
+/frontend-standard
+```
+
+它会强制 AI 按照上述 14 个步骤逐一执行，每步输出结果，最终生成完整的前后端代码、Mock 环境、E2E 测试和后端接口文档。
