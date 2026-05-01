@@ -21,23 +21,24 @@
 - [4. 管理接口（需认证）](#4-管理接口需认证)
   - [4.1 仪表盘统计](#41-get-apiadmindashboard)
   - [4.2 管理文章列表](#42-get-apiadminarticles)
-  - [4.3 创建文章](#43-post-apiadminarticles)
-  - [4.4 更新文章](#44-put-apiadminarticlesid)
-  - [4.5 删除文章](#45-delete-apiadminarticlesid)
-  - [4.6 创建分类](#46-post-apiadmincategories)
-  - [4.7 更新分类](#47-put-apiadmincategoriesid)
-  - [4.8 删除分类](#48-delete-apiadmincategoriesid)
-  - [4.9 创建标签](#49-post-apiadmintags)
-  - [4.10 更新标签](#410-put-apiadmintagsid)
-  - [4.11 删除标签](#411-delete-apiadmintagsid)
-  - [4.12 管理评论列表](#412-get-apiadmincomments)
-  - [4.13 审核评论](#413-put-apiadmincommentsidapprove)
-  - [4.14 删除评论](#414-delete-apiadmincommentsid)
-  - [4.15 获取站点设置](#415-get-apiadminsettings)
-  - [4.16 更新站点设置](#416-put-apiadminsettings)
-  - [4.17 获取个人信息](#417-get-apiadminprofile)
-  - [4.18 更新个人信息](#418-put-apiadminprofile)
-  - [4.19 修改密码](#419-put-apiadminpassword)
+  - [4.3 管理文章详情](#43-get-apiadminarticlesid)
+  - [4.4 创建文章](#44-post-apiadminarticles)
+  - [4.5 更新文章](#45-put-apiadminarticlesid)
+  - [4.6 删除文章](#46-delete-apiadminarticlesid)
+  - [4.7 创建分类](#47-post-apiadmincategories)
+  - [4.8 更新分类](#48-put-apiadmincategoriesid)
+  - [4.9 删除分类](#49-delete-apiadmincategoriesid)
+  - [4.10 创建标签](#410-post-apiadmintags)
+  - [4.11 更新标签](#411-put-apiadmintagsid)
+  - [4.12 删除标签](#412-delete-apiadmintagsid)
+  - [4.13 管理评论列表](#413-get-apiadmincomments)
+  - [4.14 审核评论](#414-put-apiadmincommentsidapprove)
+  - [4.15 删除评论](#415-delete-apiadmincommentsid)
+  - [4.16 获取站点设置](#416-get-apiadminsettings)
+  - [4.17 更新站点设置](#417-put-apiadminsettings)
+  - [4.18 获取个人信息](#418-get-apiadminprofile)
+  - [4.19 更新个人信息](#419-put-apiadminprofile)
+  - [4.20 修改密码](#420-put-apiadminpassword)
 - [5. Mock 已模拟的分支汇总](#5-mock-已模拟的分支汇总)
 - [6. 前后端契约对齐说明](#6-前后端契约对齐说明)
 
@@ -108,110 +109,122 @@ Token 通过登录接口 `/api/login` 获取。
 
 ## 2. 数据模型定义
 
+### 字段格式约定
+
+| 类别 | 格式规则 | 示例 |
+|------|----------|------|
+| ID 字段 | string，`"{前缀}-{标识}"` 格式 | `"art-abc123"`, `"cat-1"`, `"tag-uuid-xxx"` |
+| 可空字段 | 使用空字符串 `""` 表示空，**禁止使用 null** | `coverImage: ""` |
+| 日期时间 | string，ISO 8601 UTC 格式 | `"2026-04-30T12:00:00Z"` |
+| 数值字段 | number，非负整数（0 或正整数） | `viewCount: 0`, `sortOrder: 1` |
+| 布尔字段 | boolean，仅 `true` / `false` | `isApproved: false` |
+
+> **后端注意**：所有 ID 字段前端均按 string 处理。后端数据库若使用自增整数，返回时需转为字符串。日期字段统一使用 ISO 8601 UTC 格式（含时区 `Z`），前端不做额外转换。
+
 ### ArticleSummary（文章列表项）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 文章唯一标识，如 `"art-1"` |
-| `title` | string | 文章标题 |
-| `slug` | string | URL 友好标识，如 `"deep-dive-react-hooks"` |
-| `summary` | string | 文章摘要 |
-| `coverImage` | string | 封面图 URL，可为空字符串 |
-| `categoryId` | string | 所属分类 ID |
-| `tagIds` | string[] | 标签 ID 数组 |
-| `status` | string | 文章状态：`"draft"` / `"published"` / `"archived"` |
-| `viewCount` | number | 阅读次数 |
-| `createdAt` | string | 创建时间，ISO 8601 格式 |
-| `updatedAt` | string | 更新时间，ISO 8601 格式 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | string | 格式 `"art-{id}"` | 文章唯一标识 |
+| `title` | string | 非空 | 文章标题 |
+| `slug` | string | 非空，全局唯一 | URL 友好标识 |
+| `summary` | string | 可为空字符串 `""` | 文章摘要 |
+| `coverImage` | string | 可为空字符串 `""` | 封面图 URL |
+| `categoryId` | string | 格式 `"cat-{id}"`，可为空字符串 `""` | 所属分类 ID，空表示未分类 |
+| `tagIds` | string[] | 每个格式 `"tag-{id}"`，可为空数组 `[]` | 标签 ID 数组 |
+| `status` | string | 枚举：`"draft"` / `"published"` / `"archived"` | 文章状态 |
+| `viewCount` | number | 非负整数 | 阅读次数 |
+| `createdAt` | string | ISO 8601 UTC | 创建时间 |
+| `updatedAt` | string | ISO 8601 UTC | 更新时间 |
 
 ### ArticleDetail（文章详情）
 
 继承 `ArticleSummary`，额外包含：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `content` | string | 文章正文内容（Markdown 格式） |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `content` | string | 非空 | 文章正文（Markdown 格式） |
 
 ### Category（分类）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 分类唯一标识，如 `"cat-1"` |
-| `name` | string | 分类名称 |
-| `slug` | string | URL 友好标识 |
-| `description` | string | 分类描述 |
-| `articleCount` | number | 该分类下的文章数量 |
-| `sortOrder` | number | 排序权重，数字越小越靠前 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | string | 格式 `"cat-{id}"` | 分类唯一标识 |
+| `name` | string | 非空 | 分类名称 |
+| `slug` | string | 非空，全局唯一 | URL 友好标识 |
+| `description` | string | 可为空字符串 `""` | 分类描述 |
+| `articleCount` | number | 非负整数 | 该分类下的文章数量 |
+| `sortOrder` | number | 非负整数 | 排序权重，数字越小越靠前 |
 
 ### Tag（标签）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 标签唯一标识，如 `"tag-1"` |
-| `name` | string | 标签名称 |
-| `slug` | string | URL 友好标识 |
-| `articleCount` | number | 使用该标签的文章数量 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | string | 格式 `"tag-{id}"` | 标签唯一标识 |
+| `name` | string | 非空 | 标签名称 |
+| `slug` | string | 非空，全局唯一 | URL 友好标识 |
+| `articleCount` | number | 非负整数 | 使用该标签的文章数量 |
 
 ### User（用户/管理员）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 用户唯一标识 |
-| `username` | string | 登录用户名（不可修改） |
-| `nickname` | string | 显示昵称 |
-| `avatar` | string | 头像 URL |
-| `email` | string | 邮箱地址 |
-| `bio` | string | 个人简介 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | string | 格式 `"user-{id}"` | 用户唯一标识 |
+| `username` | string | 非空，不可修改 | 登录用户名 |
+| `nickname` | string | 非空 | 显示昵称 |
+| `avatar` | string | 可为空字符串 `""` | 头像 URL，空表示使用默认头像 |
+| `email` | string | 非空 | 邮箱地址 |
+| `bio` | string | 可为空字符串 `""` | 个人简介 |
 
 ### SiteSettings（站点设置）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `siteName` | string | 站点名称 |
-| `siteDescription` | string | 站点描述 |
-| `logo` | string | Logo 图片 URL |
-| `favicon` | string | Favicon 路径 |
-| `footerText` | string | 页脚文字 |
-| `socialLinks` | object | 社交链接（见下表） |
-| `postsPerPage` | number | 每页显示文章数 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `siteName` | string | 非空 | 站点名称 |
+| `siteDescription` | string | 可为空字符串 `""` | 站点描述 |
+| `logo` | string | 可为空字符串 `""` | Logo 图片 URL |
+| `favicon` | string | 非空 | Favicon 路径 |
+| `footerText` | string | 可为空字符串 `""` | 页脚文字 |
+| `socialLinks` | object | 见下表 | 社交链接 |
+| `postsPerPage` | number | 正整数，范围 1-100 | 每页显示文章数 |
 
 **socialLinks 结构：**
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `github` | string | GitHub 主页 URL |
-| `twitter` | string | Twitter 主页 URL |
-| `email` | string | 联系邮箱 |
+| `twitter` | string | 可为空字符串 `""` | Twitter 主页 URL |
+| `email` | string | 可为空字符串 `""` | 联系邮箱 |
 
 ### Comment（评论）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 评论唯一标识 |
-| `articleId` | string | 所属文章 ID |
-| `authorName` | string | 评论者昵称 |
-| `authorEmail` | string | 评论者邮箱 |
-| `content` | string | 评论内容 |
-| `isApproved` | boolean | 是否已审核通过 |
-| `createdAt` | string | 评论时间，ISO 8601 格式 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | string | 格式 `"cmt-{id}"` | 评论唯一标识 |
+| `articleId` | string | 格式 `"art-{id}"` | 所属文章 ID |
+| `authorName` | string | 非空 | 评论者昵称 |
+| `authorEmail` | string | 非空 | 评论者邮箱 |
+| `content` | string | 非空 | 评论内容 |
+| `isApproved` | boolean | — | 是否已审核通过 |
+| `createdAt` | string | ISO 8601 UTC | 评论时间 |
 
 ### DashboardStats（仪表盘统计）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `totalArticles` | number | 文章总数 |
-| `totalViews` | number | 总阅读量 |
-| `totalComments` | number | 评论总数 |
-| `totalCategories` | number | 分类数量 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `totalArticles` | number | 非负整数 | 文章总数 |
+| `totalViews` | number | 非负整数 | 总阅读量 |
+| `totalComments` | number | 非负整数 | 评论总数 |
+| `totalCategories` | number | 非负整数 | 分类数量 |
 
 ### ArchiveItem（归档项）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `year` | number | 年份 |
-| `months` | object[] | 月份列表 |
-| `months[].month` | number | 月份（1-12） |
-| `months[].articles` | ArticleSummary[] | 该月的文章列表 |
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `year` | number | 正整数，如 `2026` | 年份 |
+| `months` | object[] | — | 月份列表 |
+| `months[].month` | number | 整数，范围 1-12 | 月份 |
+| `months[].articles` | ArticleSummary[] | — | 该月的文章列表 |
 
 ---
 
@@ -522,7 +535,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 **Mock 模拟说明：**
 - 成功条件：`username === 'admin' && password === 'admin123'`
-- 其他任意组合返回 401
+- 其他用户名或密码组合均返回 401
 
 ---
 
@@ -605,7 +618,67 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.3 `POST /api/admin/articles`
+### 4.3 `GET /api/admin/articles/:id`
+
+获取单篇文章详情（管理用，按 ID 查询，含草稿）。
+
+**路径参数：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 文章 ID，格式 `"art-{uuid}"` |
+
+**成功响应 (200)：** 返回完整 ArticleDetail 对象（含 content 字段）。
+
+```json
+{
+  "code": 200,
+  "data": {
+    "id": "art-1",
+    "title": "深入理解 React Hooks",
+    "slug": "deep-dive-react-hooks",
+    "summary": "本文详细介绍了...",
+    "content": "# 深入理解 React Hooks\n\n...",
+    "coverImage": "https://picsum.photos/seed/react/800/400",
+    "categoryId": "cat-1",
+    "tagIds": ["tag-1", "tag-2"],
+    "status": "published",
+    "viewCount": 1234,
+    "createdAt": "2026-03-15T10:00:00Z",
+    "updatedAt": "2026-03-15T10:00:00Z"
+  },
+  "message": "ok"
+}
+```
+
+**失败响应 (401)：**
+
+```json
+{
+  "code": 401,
+  "data": null,
+  "message": "未认证：请先登录"
+}
+```
+
+**失败响应 (404)：**
+
+```json
+{
+  "code": 404,
+  "data": null,
+  "message": "文章不存在"
+}
+```
+
+**Mock 模拟说明：**
+- 按文章 ID 查询，返回含 content 的完整详情
+- 包含草稿和归档状态的文章
+- ID 不存在时返回 404
+
+---
+
+### 4.4 `POST /api/admin/articles`
 
 创建新文章。
 
@@ -668,6 +741,26 @@ Token 通过登录接口 `/api/login` 获取。
 }
 ```
 
+**失败响应 (401)：**
+
+```json
+{
+  "code": 401,
+  "data": null,
+  "message": "未认证：请先登录"
+}
+```
+
+**失败响应 (500)：**
+
+```json
+{
+  "code": 500,
+  "data": null,
+  "message": "服务器内部错误"
+}
+```
+
 **Mock 模拟说明：**
 - 成功时返回 201，`id` 由服务端生成（格式 `art-{timestamp}`）
 - `viewCount` 默认为 0，`createdAt`/`updatedAt` 为服务端当前时间
@@ -675,7 +768,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.4 `PUT /api/admin/articles/:id`
+### 4.5 `PUT /api/admin/articles/:id`
 
 更新已有文章。
 
@@ -727,7 +820,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.5 `DELETE /api/admin/articles/:id`
+### 4.6 `DELETE /api/admin/articles/:id`
 
 删除文章。
 
@@ -759,7 +852,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.6 `POST /api/admin/categories`
+### 4.7 `POST /api/admin/categories`
 
 创建新分类。
 
@@ -803,7 +896,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.7 `PUT /api/admin/categories/:id`
+### 4.8 `PUT /api/admin/categories/:id`
 
 更新分类。
 
@@ -841,7 +934,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.8 `DELETE /api/admin/categories/:id`
+### 4.9 `DELETE /api/admin/categories/:id`
 
 删除分类。
 
@@ -875,12 +968,13 @@ Token 通过登录接口 `/api/login` 获取。
 }
 ```
 
-> 注：此失败场景在 Mock 中通过独立路径 `/api/admin/categories/:id/has-articles` 模拟，
-> 后端应实现为：当分类下仍有文章时，DELETE 接口返回 400。
+**Mock 模拟说明：**
+- 当分类的 `articleCount > 0` 时，DELETE 返回 400
+- ID 不存在时返回 404
 
 ---
 
-### 4.9 `POST /api/admin/tags`
+### 4.10 `POST /api/admin/tags`
 
 创建新标签。
 
@@ -915,7 +1009,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.10 `PUT /api/admin/tags/:id`
+### 4.11 `PUT /api/admin/tags/:id`
 
 更新标签。
 
@@ -948,7 +1042,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.11 `DELETE /api/admin/tags/:id`
+### 4.12 `DELETE /api/admin/tags/:id`
 
 删除标签。
 
@@ -974,7 +1068,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.12 `GET /api/admin/comments`
+### 4.13 `GET /api/admin/comments`
 
 获取评论管理列表（含待审核）。
 
@@ -1024,7 +1118,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.13 `PUT /api/admin/comments/:id/approve`
+### 4.14 `PUT /api/admin/comments/:id/approve`
 
 审核通过评论。
 
@@ -1062,7 +1156,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.14 `DELETE /api/admin/comments/:id`
+### 4.15 `DELETE /api/admin/comments/:id`
 
 删除评论。
 
@@ -1088,7 +1182,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.15 `GET /api/admin/settings`
+### 4.16 `GET /api/admin/settings`
 
 获取站点设置（管理端，内容同公开接口，但需认证）。
 
@@ -1096,7 +1190,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.16 `PUT /api/admin/settings`
+### 4.17 `PUT /api/admin/settings`
 
 更新站点设置。
 
@@ -1125,7 +1219,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.17 `GET /api/admin/profile`
+### 4.18 `GET /api/admin/profile`
 
 获取管理员个人信息。
 
@@ -1133,7 +1227,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.18 `PUT /api/admin/profile`
+### 4.19 `PUT /api/admin/profile`
 
 更新管理员个人信息。
 
@@ -1177,7 +1271,7 @@ Token 通过登录接口 `/api/login` 获取。
 
 ---
 
-### 4.19 `PUT /api/admin/password`
+### 4.20 `PUT /api/admin/password`
 
 修改管理员密码。
 
@@ -1223,30 +1317,61 @@ Token 通过登录接口 `/api/login` 获取。
 
 ## 5. Mock 已模拟的分支汇总
 
-| 接口 | 成功分支 | 失败分支 | 失败业务含义 |
-|------|----------|----------|-------------|
-| `POST /api/login` | admin/admin123 | 其他凭据 → 401 | 用户名或密码错误 |
+### 5.1 通用认证检查（所有管理接口）
+
+所有 `/api/admin/*` 接口均执行以下认证检查：
+
+| 检查项 | 触发条件 | HTTP 状态码 | 业务 code | message |
+|--------|----------|------------|-----------|---------|
+| 未携带 Token | 请求头无 `Authorization` | 401 | 401 | `未认证：请先登录` |
+| Token 无效/过期 | `Bearer` 后的值不匹配 | 401 | 401 | `Token 无效或已过期` |
+
+### 5.2 通用服务器错误模拟（所有写操作）
+
+所有写操作（POST/PUT/DELETE）支持通过请求头 `X-Test-Error: 500` 触发 500 响应：
+
+| 触发方式 | HTTP 状态码 | 业务 code | message |
+|----------|------------|-----------|---------|
+| 请求头 `X-Test-Error: 500` | 500 | 500 | `服务器内部错误` |
+
+### 5.3 各接口业务失败分支
+
+| 接口 | 成功分支 | 业务失败分支 | 失败业务含义 |
+|------|----------|-------------|-------------|
+| `POST /api/login` | admin/admin123 → 200 | 用户名或密码为空 → 400 | 用户名和密码不能为空 |
+| `POST /api/login` | — | 其他凭据 → 401 | 用户名或密码错误 |
+| `GET /api/admin/articles/:id` | ID 存在 → 200 | ID 不存在 → 404 | 文章不存在 |
 | `POST /api/admin/articles` | 正常创建 → 201 | 标题为空 → 400 | 文章标题不能为空 |
-| `PUT /api/admin/articles/:id` | 正常更新 → 200 | ID 不存在 → 404 | 文章不存在 |
+| `PUT /api/admin/articles/:id` | 正常更新 → 200 | 标题为空 → 400 | 文章标题不能为空 |
+| `PUT /api/admin/articles/:id` | — | ID 不存在 → 404 | 文章不存在 |
 | `DELETE /api/admin/articles/:id` | 正常删除 → 200 | ID 不存在 → 404 | 文章不存在 |
-| `PUT /api/admin/categories/:id` | 正常更新 → 200 | ID 不存在 → 404 | 分类不存在 |
+| `POST /api/admin/categories` | 正常创建 → 201 | 名称为空 → 400 | 分类名称不能为空 |
+| `POST /api/admin/categories` | — | 名称或标识重复 → 400 | 分类名称或标识已存在 |
+| `PUT /api/admin/categories/:id` | 正常更新 → 200 | 名称为空 → 400 | 分类名称不能为空 |
+| `PUT /api/admin/categories/:id` | — | ID 不存在 → 404 | 分类不存在 |
 | `DELETE /api/admin/categories/:id` | 正常删除 → 200 | ID 不存在 → 404 | 分类不存在 |
-| `DELETE /api/admin/categories/:id` (has-articles) | — | 有关联文章 → 400 | 该分类下还有文章，无法删除 |
-| `PUT /api/admin/tags/:id` | 正常更新 → 200 | ID 不存在 → 404 | 标签不存在 |
+| `DELETE /api/admin/categories/:id` | — | 有关联文章 → 400 | 该分类下还有文章，无法删除 |
+| `POST /api/admin/tags` | 正常创建 → 201 | 名称为空 → 400 | 标签名称不能为空 |
+| `POST /api/admin/tags` | — | 名称或标识重复 → 400 | 标签名称或标识已存在 |
+| `PUT /api/admin/tags/:id` | 正常更新 → 200 | 名称为空 → 400 | 标签名称不能为空 |
+| `PUT /api/admin/tags/:id` | — | ID 不存在 → 404 | 标签不存在 |
 | `DELETE /api/admin/tags/:id` | 正常删除 → 200 | ID 不存在 → 404 | 标签不存在 |
 | `PUT /api/admin/comments/:id/approve` | 正常审核 → 200 | ID 不存在 → 404 | 评论不存在 |
 | `DELETE /api/admin/comments/:id` | 正常删除 → 200 | ID 不存在 → 404 | 评论不存在 |
-| `PUT /api/admin/password` | 原密码正确 → 200 | 原密码错误 → 400 | 原密码错误 |
+| `PUT /api/admin/settings` | 正常更新 → 200 | 站点名称为空 → 400 | 站点名称不能为空 |
+| `PUT /api/admin/profile` | 正常更新 → 200 | 昵称为空 → 400 | 昵称不能为空 |
+| `PUT /api/admin/profile` | — | 邮箱为空 → 400 | 邮箱不能为空 |
+| `PUT /api/admin/password` | 原密码正确 → 200 | 新密码为空 → 400 | 新密码不能为空 |
+| `PUT /api/admin/password` | — | 原密码错误 → 400 | 原密码错误 |
 
-**建议后端额外实现的失败场景（Mock 未覆盖）：**
+### 5.4 后端可选扩展的失败场景（Mock 未覆盖）
 
-| 接口 | 建议失败场景 | 建议 HTTP 状态码 |
-|------|-------------|-----------------|
+以下场景由后端根据业务需求决定是否实现，前端已做好错误处理：
+
+| 接口 | 扩展失败场景 | HTTP 状态码 |
+|------|-------------|------------|
 | `POST /api/admin/articles` | slug 重复 → 400 | 400 |
-| `POST /api/admin/categories` | 分类名重复 → 400 | 400 |
-| `POST /api/admin/tags` | 标签名重复 → 400 | 400 |
 | `POST /api/login` | 账号被禁用 → 403 | 403 |
-| 所有 admin 接口 | Token 过期 → 401 | 401 |
 | 所有 admin 接口 | 权限不足 → 403 | 403 |
 
 ---
@@ -1267,7 +1392,7 @@ Token 通过登录接口 `/api/login` 获取。
 3. 失败响应 `data` 必须为 `null`，`message` 必须包含可展示给用户的错误描述。
 4. 分页接口必须返回 `pagination` 对象，包含 `page`、`pageSize`、`total`、`totalPages` 四个字段。
 5. 所有时间字段使用 ISO 8601 格式（如 `2026-04-30T12:00:00Z`）。
-6. ID 字段使用字符串类型，格式不限（建议使用 UUID 或自增数字的字符串形式）。
+6. ID 字段使用字符串类型，格式为 `"{前缀}-{标识}"`（如 `"art-abc123"`、`"cat-1"`）。前缀规则：文章 `art-`、分类 `cat-`、标签 `tag-`、用户 `user-`、评论 `cmt-`。
 
 ### 兼容性原则
 

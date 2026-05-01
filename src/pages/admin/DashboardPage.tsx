@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { DashboardStats } from '../../types'
 import { getDashboardStats } from '../../services'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
 
-type AsyncState = 'loading' | 'error' | 'ready'
+type AsyncState = 'loading' | 'empty' | 'error' | 'ready'
 
 export default function DashboardPage() {
   const [state, setState] = useState<AsyncState>('loading')
@@ -16,8 +17,12 @@ export default function DashboardPage() {
     try {
       const res = await getDashboardStats()
       if (res.code === 200) {
-        setStats(res.data)
-        setState('ready')
+        if (!res.data) {
+          setState('empty')
+        } else {
+          setStats(res.data)
+          setState('ready')
+        }
       } else {
         setErrorMsg(res.message)
         setState('error')
@@ -31,6 +36,7 @@ export default function DashboardPage() {
   useEffect(() => { fetchData() }, [])
 
   if (state === 'loading') return <LoadingSpinner />
+  if (state === 'empty') return <EmptyState message="暂无统计数据" />
   if (state === 'error') return <ErrorState message={errorMsg} onRetry={fetchData} />
 
   const cards = [

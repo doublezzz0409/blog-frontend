@@ -105,7 +105,7 @@ export default function ArticleListPage() {
                   {new Date(article.createdAt).toLocaleDateString('zh-CN')}
                 </td>
                 <td className="px-4 py-3 text-right space-x-2">
-                  <Link to={`/admin/articles/edit/${article.id}`} className="text-blue-600 hover:underline text-xs">编辑</Link>
+                  <Link to={`/admin/articles/${article.id}`} className="text-blue-600 hover:underline text-xs">编辑</Link>
                   <button onClick={() => handleDelete(article.id)} className="text-red-600 hover:underline text-xs">删除</button>
                 </td>
               </tr>

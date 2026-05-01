@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { User, ProfileFormData, ChangePasswordParams } from '../../types'
 import { getProfile, updateProfile, changePassword } from '../../services'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
 
-type AsyncState = 'loading' | 'error' | 'ready'
+type AsyncState = 'loading' | 'empty' | 'error' | 'ready'
 
 export default function ProfilePage() {
   const [state, setState] = useState<AsyncState>('loading')
@@ -23,9 +24,13 @@ export default function ProfilePage() {
     try {
       const res = await getProfile()
       if (res.code === 200) {
-        setUser(res.data)
-        setForm({ nickname: res.data.nickname, avatar: res.data.avatar, email: res.data.email, bio: res.data.bio })
-        setState('ready')
+        if (!res.data || (!res.data.nickname && !res.data.email)) {
+          setState('empty')
+        } else {
+          setUser(res.data)
+          setForm({ nickname: res.data.nickname, avatar: res.data.avatar, email: res.data.email, bio: res.data.bio })
+          setState('ready')
+        }
       } else {
         setErrorMsg(res.message)
         setState('error')
@@ -75,6 +80,7 @@ export default function ProfilePage() {
   }
 
   if (state === 'loading') return <LoadingSpinner />
+  if (state === 'empty') return <EmptyState message="暂无个人信息" />
   if (state === 'error') return <ErrorState message={errorMsg} onRetry={fetchData} />
 
   return (

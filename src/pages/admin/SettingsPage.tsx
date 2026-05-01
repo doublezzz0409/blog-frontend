@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { SiteSettings } from '../../types'
 import { getAdminSettings, updateSettings } from '../../services'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
 
-type AsyncState = 'loading' | 'error' | 'ready'
+type AsyncState = 'loading' | 'empty' | 'error' | 'ready'
 
 export default function SettingsPage() {
   const [state, setState] = useState<AsyncState>('loading')
@@ -18,8 +19,12 @@ export default function SettingsPage() {
     try {
       const res = await getAdminSettings()
       if (res.code === 200) {
-        setSettings(res.data)
-        setState('ready')
+        if (!res.data) {
+          setState('empty')
+        } else {
+          setSettings(res.data)
+          setState('ready')
+        }
       } else {
         setErrorMsg(res.message)
         setState('error')
@@ -61,6 +66,7 @@ export default function SettingsPage() {
   }
 
   if (state === 'loading') return <LoadingSpinner />
+  if (state === 'empty') return <EmptyState message="暂无站点设置" />
   if (state === 'error') return <ErrorState message={errorMsg} onRetry={fetchData} />
 
   return (

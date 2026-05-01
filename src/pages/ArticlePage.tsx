@@ -3,9 +3,10 @@ import { useParams, Link } from 'react-router-dom'
 import type { ArticleDetail } from '../types'
 import { getArticleDetail } from '../services'
 import LoadingSpinner from '../components/LoadingSpinner'
+import EmptyState from '../components/EmptyState'
 import ErrorState from '../components/ErrorState'
 
-type AsyncState = 'loading' | 'error' | 'ready'
+type AsyncState = 'loading' | 'empty' | 'error' | 'ready'
 
 export default function ArticlePage() {
   const { slug } = useParams<{ slug: string }>()
@@ -19,8 +20,12 @@ export default function ArticlePage() {
     try {
       const res = await getArticleDetail(slug)
       if (res.code === 200) {
-        setArticle(res.data)
-        setState('ready')
+        if (!res.data || !res.data.title) {
+          setState('empty')
+        } else {
+          setArticle(res.data)
+          setState('ready')
+        }
       } else {
         setErrorMsg(res.message)
         setState('error')
@@ -36,6 +41,7 @@ export default function ArticlePage() {
   }, [slug])
 
   if (state === 'loading') return <LoadingSpinner />
+  if (state === 'empty') return <EmptyState message="文章不存在" />
   if (state === 'error') return <ErrorState message={errorMsg} onRetry={fetchData} />
 
   const date = new Date(article!.createdAt).toLocaleDateString('zh-CN', {

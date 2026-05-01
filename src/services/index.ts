@@ -16,6 +16,7 @@ import type {
   GetDashboardStatsResponse,
   GetAdminArticlesParams,
   GetAdminArticlesResponse,
+  GetAdminArticleDetailResponse,
   CreateArticleBody,
   CreateArticleResponse,
   UpdateArticleBody,
@@ -144,6 +145,10 @@ export function getDashboardStats(): Promise<GetDashboardStatsResponse> {
 
 export function getAdminArticles(params: GetAdminArticlesParams): Promise<GetAdminArticlesResponse> {
   return get('/admin/articles', params as Record<string, string | number | undefined>)
+}
+
+export function getAdminArticleDetail(id: string): Promise<GetAdminArticleDetailResponse> {
+  return get(`/admin/articles/${id}`)
 }
 
 export function createArticle(body: CreateArticleBody): Promise<CreateArticleResponse> {

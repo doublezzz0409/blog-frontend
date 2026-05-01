@@ -10,7 +10,7 @@ test('公开路由: 首页 /', async ({ page }) => {
 
 test('公开路由: 文章详情 /article/deep-dive-react-hooks', async ({ page }) => {
   await page.goto('/article/deep-dive-react-hooks')
-  await expect(page.locator('h1')).toContainText('深入理解 React Hooks')
+  await expect(page.locator('h1').first()).toContainText('深入理解 React Hooks')
   console.log('PASS: /article/deep-dive-react-hooks')
 })
 

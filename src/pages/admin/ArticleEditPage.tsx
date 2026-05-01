@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { ArticleFormData, ArticleStatus, Category, Tag } from '../../types'
-import { createArticle, updateArticle, getArticleDetail, getCategories, getTags } from '../../services'
+import { createArticle, updateArticle, getAdminArticleDetail, getCategories, getTags } from '../../services'
+import LoadingSpinner from '../../components/LoadingSpinner'
+import ErrorState from '../../components/ErrorState'
+
+type PageState = 'loading' | 'error' | 'ready'
 
 export default function ArticleEditPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const isEdit = id !== 'new'
 
+  const [pageState, setPageState] = useState<PageState>(isEdit ? 'loading' : 'ready')
   const [categories, setCategories] = useState<Category[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   const [form, setForm] = useState<ArticleFormData>({
     title: '',
@@ -24,17 +30,16 @@ export default function ArticleEditPage() {
     status: 'draft',
   })
 
-  useEffect(() => {
-    getCategories().then((res) => {
-      if (res.code === 200) setCategories(res.data)
-    })
-    getTags().then((res) => {
-      if (res.code === 200) setTags(res.data)
-    })
-    if (isEdit && id) {
-      getArticleDetail(id).then((res) => {
-        if (res.code === 200) {
-          const a = res.data
+  const fetchDependencies = async () => {
+    try {
+      const [catRes, tagRes] = await Promise.all([getCategories(), getTags()])
+      if (catRes.code === 200) setCategories(catRes.data)
+      if (tagRes.code === 200) setTags(tagRes.data)
+
+      if (isEdit && id) {
+        const artRes = await getAdminArticleDetail(id)
+        if (artRes.code === 200) {
+          const a = artRes.data
           setForm({
             title: a.title,
             slug: a.slug,
@@ -45,10 +50,19 @@ export default function ArticleEditPage() {
             tagIds: a.tagIds,
             status: a.status,
           })
+          setPageState('ready')
+        } else {
+          setLoadError(artRes.message)
+          setPageState('error')
         }
-      })
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : '加载失败')
+      setPageState('error')
     }
-  }, [id, isEdit])
+  }
+
+  useEffect(() => { fetchDependencies() }, [id, isEdit])
 
   const handleChange = (field: keyof ArticleFormData, value: string | string[] | ArticleStatus) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -80,6 +94,9 @@ export default function ArticleEditPage() {
         : [...prev.tagIds, tagId],
     }))
   }
+
+  if (pageState === 'loading') return <LoadingSpinner />
+  if (pageState === 'error') return <ErrorState message={loadError} onRetry={fetchDependencies} />
 
   return (
     <div>

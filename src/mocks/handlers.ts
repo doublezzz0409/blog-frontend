@@ -4,7 +4,6 @@
 
 import { http, HttpResponse, delay } from 'msw'
 import type {
-  ApiResponse,
   ArticleSummary,
   ArticleDetail,
   Category,
@@ -16,6 +15,7 @@ import type {
   ArchiveItem,
   PaginatedList,
 } from '../types'
+import type { ApiResponse } from '../types/api-contract'
 
 // ============================================================
 // Mock 数据
@@ -198,6 +198,8 @@ const mockArchive: ArchiveItem[] = [
 // 辅助函数
 // ============================================================
 
+const VALID_TOKEN = 'mock-jwt-token-abc123'
+
 function ok<T>(data: T): ApiResponse<T> {
   return { code: 200, data, message: 'ok' }
 }
@@ -212,6 +214,27 @@ function paginate(items: ArticleSummary[], page: number, pageSize: number): Pagi
     items: items.slice(start, start + pageSize),
     pagination: { page, pageSize, total: items.length, totalPages: Math.ceil(items.length / pageSize) },
   }
+}
+
+/** 检查管理接口认证：无 Token 或 Token 无效返回 401 */
+function checkAuth(request: Request): ApiResponse<null> | null {
+  const auth = request.headers.get('Authorization')
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return fail('未认证：请先登录', 401)
+  }
+  const token = auth.replace('Bearer ', '')
+  if (token !== VALID_TOKEN) {
+    return fail('Token 无效或已过期', 401)
+  }
+  return null
+}
+
+/** 模拟 500 服务器错误：请求头含 X-Test-Error: 500 时触发 */
+function check500(request: Request): ApiResponse<null> | null {
+  if (request.headers.get('X-Test-Error') === '500') {
+    return fail('服务器内部错误', 500)
+  }
+  return null
 }
 
 // ============================================================
@@ -278,12 +301,18 @@ export const handlers = [
     return HttpResponse.json(ok(mockUser))
   }),
 
-  // POST /api/login — 成功
+  // POST /api/login
+  // 成功：admin/admin123 → 200 + token
+  // 失败 (400)：用户名或密码为空
+  // 失败 (401)：凭据错误
   http.post('/api/login', async ({ request }) => {
     await delay(500)
     const body = (await request.json()) as { username: string; password: string }
+    if (!body.username || !body.password) {
+      return HttpResponse.json(fail('用户名和密码不能为空'), { status: 400 })
+    }
     if (body.username === 'admin' && body.password === 'admin123') {
-      return HttpResponse.json(ok({ token: 'mock-jwt-token-abc123', user: mockUser }))
+      return HttpResponse.json(ok({ token: VALID_TOKEN, user: mockUser }))
     }
     return HttpResponse.json(fail('用户名或密码错误', 401), { status: 401 })
   }),
@@ -291,14 +320,19 @@ export const handlers = [
   // ── 管理接口 ──────────────────────────────────────────────
 
   // GET /api/admin/dashboard
-  http.get('/api/admin/dashboard', async () => {
+  http.get('/api/admin/dashboard', async ({ request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
     return HttpResponse.json(ok(mockDashboard))
   }),
 
   // GET /api/admin/articles
   http.get('/api/admin/articles', async ({ request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+
     const url = new URL(request.url)
     const page = Number(url.searchParams.get('page') || '1')
     const pageSize = Number(url.searchParams.get('pageSize') || '10')
@@ -311,10 +345,33 @@ export const handlers = [
     return HttpResponse.json(ok(paginate(summaries, page, pageSize)))
   }),
 
-  // POST /api/admin/articles — 成功
+  // GET /api/admin/articles/:id — 管理用文章详情（按 ID 查询，含草稿）
+  http.get('/api/admin/articles/:id', async ({ params, request }) => {
+    await delay(200)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+
+    const article = mockArticles.find((a) => a.id === params.id)
+    if (!article) return HttpResponse.json(fail('文章不存在', 404), { status: 404 })
+    return HttpResponse.json(ok(article))
+  }),
+
+  // POST /api/admin/articles
+  // 成功 (201)：正常创建
+  // 失败 (400)：标题为空
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误（通过 X-Test-Error: 500 触发）
   http.post('/api/admin/articles', async ({ request }) => {
     await delay(400)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<ArticleDetail, 'id' | 'viewCount' | 'createdAt' | 'updatedAt'>
+    if (!body.title || body.title.trim() === '') {
+      return HttpResponse.json(fail('文章标题不能为空'), { status: 400 })
+    }
     const newArticle: ArticleDetail = {
       ...body,
       id: `art-${Date.now()}`,
@@ -325,16 +382,23 @@ export const handlers = [
     return HttpResponse.json(ok(newArticle), { status: 201 })
   }),
 
-  // POST /api/admin/articles — 失败（标题为空）
-  http.post('/api/admin/articles-fail', async () => {
-    await delay(200)
-    return HttpResponse.json(fail('文章标题不能为空'), { status: 400 })
-  }),
-
-  // PUT /api/admin/articles/:id — 成功
+  // PUT /api/admin/articles/:id
+  // 成功 (200)：正常更新
+  // 失败 (400)：标题为空
+  // 失败 (401)：未认证
+  // 失败 (404)：文章不存在
+  // 失败 (500)：服务器错误
   http.put('/api/admin/articles/:id', async ({ params, request }) => {
     await delay(400)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<ArticleDetail, 'id' | 'viewCount' | 'createdAt' | 'updatedAt'>
+    if (!body.title || body.title.trim() === '') {
+      return HttpResponse.json(fail('文章标题不能为空'), { status: 400 })
+    }
     const existing = mockArticles.find((a) => a.id === params.id)
     if (!existing) return HttpResponse.json(fail('文章不存在', 404), { status: 404 })
     const updated: ArticleDetail = {
@@ -345,65 +409,148 @@ export const handlers = [
     return HttpResponse.json(ok(updated))
   }),
 
-  // DELETE /api/admin/articles/:id — 成功
-  http.delete('/api/admin/articles/:id', async ({ params }) => {
+  // DELETE /api/admin/articles/:id
+  // 成功 (200)：正常删除
+  // 失败 (401)：未认证
+  // 失败 (404)：文章不存在
+  // 失败 (500)：服务器错误
+  http.delete('/api/admin/articles/:id', async ({ params, request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const existing = mockArticles.find((a) => a.id === params.id)
     if (!existing) return HttpResponse.json(fail('文章不存在', 404), { status: 404 })
     return HttpResponse.json(ok(null))
   }),
 
-  // POST /api/admin/categories — 成功
+  // POST /api/admin/categories
+  // 成功 (201)：正常创建
+  // 失败 (400)：名称为空或重复
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误
   http.post('/api/admin/categories', async ({ request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<Category, 'id' | 'articleCount'>
+    if (!body.name || body.name.trim() === '') {
+      return HttpResponse.json(fail('分类名称不能为空'), { status: 400 })
+    }
+    const duplicate = mockCategories.find((c) => c.name === body.name || c.slug === body.slug)
+    if (duplicate) {
+      return HttpResponse.json(fail('分类名称或标识已存在'), { status: 400 })
+    }
     const newCat: Category = { ...body, id: `cat-${Date.now()}`, articleCount: 0 }
     return HttpResponse.json(ok(newCat), { status: 201 })
   }),
 
-  // PUT /api/admin/categories/:id — 成功
+  // PUT /api/admin/categories/:id
+  // 成功 (200)：正常更新
+  // 失败 (400)：名称为空
+  // 失败 (401)：未认证
+  // 失败 (404)：分类不存在
+  // 失败 (500)：服务器错误
   http.put('/api/admin/categories/:id', async ({ params, request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<Category, 'id' | 'articleCount'>
+    if (!body.name || body.name.trim() === '') {
+      return HttpResponse.json(fail('分类名称不能为空'), { status: 400 })
+    }
     const existing = mockCategories.find((c) => c.id === params.id)
     if (!existing) return HttpResponse.json(fail('分类不存在', 404), { status: 404 })
     return HttpResponse.json(ok({ ...existing, ...body }))
   }),
 
-  // DELETE /api/admin/categories/:id — 成功
-  http.delete('/api/admin/categories/:id', async ({ params }) => {
+  // DELETE /api/admin/categories/:id
+  // 成功 (200)：正常删除
+  // 失败 (400)：有关联文章
+  // 失败 (401)：未认证
+  // 失败 (404)：分类不存在
+  // 失败 (500)：服务器错误
+  http.delete('/api/admin/categories/:id', async ({ params, request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const existing = mockCategories.find((c) => c.id === params.id)
     if (!existing) return HttpResponse.json(fail('分类不存在', 404), { status: 404 })
+    if (existing.articleCount > 0) {
+      return HttpResponse.json(fail('该分类下还有文章，无法删除'), { status: 400 })
+    }
     return HttpResponse.json(ok(null))
   }),
 
-  // DELETE /api/admin/categories/:id — 失败（有关联文章）
-  http.delete('/api/admin/categories/:id/has-articles', async () => {
-    await delay(200)
-    return HttpResponse.json(fail('该分类下还有文章，无法删除'), { status: 400 })
-  }),
-
-  // POST /api/admin/tags — 成功
+  // POST /api/admin/tags
+  // 成功 (201)：正常创建
+  // 失败 (400)：名称为空或重复
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误
   http.post('/api/admin/tags', async ({ request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<Tag, 'id' | 'articleCount'>
+    if (!body.name || body.name.trim() === '') {
+      return HttpResponse.json(fail('标签名称不能为空'), { status: 400 })
+    }
+    const duplicate = mockTags.find((t) => t.name === body.name || t.slug === body.slug)
+    if (duplicate) {
+      return HttpResponse.json(fail('标签名称或标识已存在'), { status: 400 })
+    }
     const newTag: Tag = { ...body, id: `tag-${Date.now()}`, articleCount: 0 }
     return HttpResponse.json(ok(newTag), { status: 201 })
   }),
 
-  // PUT /api/admin/tags/:id — 成功
+  // PUT /api/admin/tags/:id
+  // 成功 (200)：正常更新
+  // 失败 (400)：名称为空
+  // 失败 (401)：未认证
+  // 失败 (404)：标签不存在
+  // 失败 (500)：服务器错误
   http.put('/api/admin/tags/:id', async ({ params, request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Omit<Tag, 'id' | 'articleCount'>
+    if (!body.name || body.name.trim() === '') {
+      return HttpResponse.json(fail('标签名称不能为空'), { status: 400 })
+    }
     const existing = mockTags.find((t) => t.id === params.id)
     if (!existing) return HttpResponse.json(fail('标签不存在', 404), { status: 404 })
     return HttpResponse.json(ok({ ...existing, ...body }))
   }),
 
-  // DELETE /api/admin/tags/:id — 成功
-  http.delete('/api/admin/tags/:id', async ({ params }) => {
+  // DELETE /api/admin/tags/:id
+  // 成功 (200)：正常删除
+  // 失败 (401)：未认证
+  // 失败 (404)：标签不存在
+  // 失败 (500)：服务器错误
+  http.delete('/api/admin/tags/:id', async ({ params, request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const existing = mockTags.find((t) => t.id === params.id)
     if (!existing) return HttpResponse.json(fail('标签不存在', 404), { status: 404 })
     return HttpResponse.json(ok(null))
@@ -412,6 +559,9 @@ export const handlers = [
   // GET /api/admin/comments
   http.get('/api/admin/comments', async ({ request }) => {
     await delay(300)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+
     const url = new URL(request.url)
     const page = Number(url.searchParams.get('page') || '1')
     const pageSize = Number(url.searchParams.get('pageSize') || '10')
@@ -423,61 +573,116 @@ export const handlers = [
     }))
   }),
 
-  // PUT /api/admin/comments/:id/approve — 成功
-  http.put('/api/admin/comments/:id/approve', async ({ params }) => {
+  // PUT /api/admin/comments/:id/approve
+  // 成功 (200)：正常审核
+  // 失败 (401)：未认证
+  // 失败 (404)：评论不存在
+  // 失败 (500)：服务器错误
+  http.put('/api/admin/comments/:id/approve', async ({ params, request }) => {
     await delay(200)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const comment = mockComments.find((c) => c.id === params.id)
     if (!comment) return HttpResponse.json(fail('评论不存在', 404), { status: 404 })
     return HttpResponse.json(ok({ ...comment, isApproved: true }))
   }),
 
-  // DELETE /api/admin/comments/:id — 成功
-  http.delete('/api/admin/comments/:id', async ({ params }) => {
+  // DELETE /api/admin/comments/:id
+  // 成功 (200)：正常删除
+  // 失败 (401)：未认证
+  // 失败 (404)：评论不存在
+  // 失败 (500)：服务器错误
+  http.delete('/api/admin/comments/:id', async ({ params, request }) => {
     await delay(200)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const comment = mockComments.find((c) => c.id === params.id)
     if (!comment) return HttpResponse.json(fail('评论不存在', 404), { status: 404 })
     return HttpResponse.json(ok(null))
   }),
 
   // GET /api/admin/settings
-  http.get('/api/admin/settings', async () => {
+  http.get('/api/admin/settings', async ({ request }) => {
     await delay(200)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
     return HttpResponse.json(ok(mockSettings))
   }),
 
-  // PUT /api/admin/settings — 成功
+  // PUT /api/admin/settings
+  // 成功 (200)：正常更新
+  // 失败 (400)：站点名称为空
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误
   http.put('/api/admin/settings', async ({ request }) => {
     await delay(400)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as SiteSettings
+    if (!body.siteName || body.siteName.trim() === '') {
+      return HttpResponse.json(fail('站点名称不能为空'), { status: 400 })
+    }
     return HttpResponse.json(ok(body))
   }),
 
   // GET /api/admin/profile
-  http.get('/api/admin/profile', async () => {
+  http.get('/api/admin/profile', async ({ request }) => {
     await delay(200)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
     return HttpResponse.json(ok(mockUser))
   }),
 
-  // PUT /api/admin/profile — 成功
+  // PUT /api/admin/profile
+  // 成功 (200)：正常更新
+  // 失败 (400)：昵称或邮箱为空
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误
   http.put('/api/admin/profile', async ({ request }) => {
     await delay(400)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as Partial<User>
+    if (body.nickname !== undefined && !body.nickname.trim()) {
+      return HttpResponse.json(fail('昵称不能为空'), { status: 400 })
+    }
+    if (body.email !== undefined && !body.email.trim()) {
+      return HttpResponse.json(fail('邮箱不能为空'), { status: 400 })
+    }
     return HttpResponse.json(ok({ ...mockUser, ...body }))
   }),
 
-  // PUT /api/admin/password — 成功
+  // PUT /api/admin/password
+  // 成功 (200)：原密码正确
+  // 失败 (400)：原密码错误或新密码为空
+  // 失败 (401)：未认证
+  // 失败 (500)：服务器错误
   http.put('/api/admin/password', async ({ request }) => {
     await delay(400)
+    const authErr = checkAuth(request)
+    if (authErr) return HttpResponse.json(authErr, { status: 401 })
+    const err500 = check500(request)
+    if (err500) return HttpResponse.json(err500, { status: 500 })
+
     const body = (await request.json()) as { oldPassword: string; newPassword: string }
+    if (!body.newPassword || body.newPassword.trim() === '') {
+      return HttpResponse.json(fail('新密码不能为空'), { status: 400 })
+    }
     if (body.oldPassword !== 'admin123') {
       return HttpResponse.json(fail('原密码错误'), { status: 400 })
     }
     return HttpResponse.json(ok(null))
-  }),
-
-  // PUT /api/admin/password — 失败（原密码错误）
-  http.put('/api/admin/password-wrong', async () => {
-    await delay(200)
-    return HttpResponse.json(fail('原密码错误'), { status: 400 })
   }),
 ]
